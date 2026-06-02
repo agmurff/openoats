@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import os
+from datetime import datetime
+from pathlib import Path
 from PySide6.QtCore import QObject, Signal
 from app.settings import AppSettings
 from audio.mic_capture import MicCapture
@@ -28,25 +31,29 @@ class AppCoordinator(QObject):
         self.settings = settings or AppSettings()
         self._loop = asyncio.get_event_loop()
 
+        self._migrate_legacy_env()
+
         self.transcript_store = TranscriptStore()
         self._mic = MicCapture(self._loop, device=self.settings.input_device)
         self._sys = SystemCapture(self._loop)
         self._engine: TranscriptionEngine | None = None
         self._session_store: SessionStore | None = None
         self._engine_task: asyncio.Task | None = None
+        self._last_session_id: str | None = None
+        self._last_title: str = "Meeting"
 
         self.kb = self._build_kb()
         self.suggestion_engine: SuggestionEngine | None = None
         self.notes_engine: NotesEngine | None = None
 
     def _build_kb(self) -> KnowledgeBase | None:
-        if not self.settings.kb_folder:
-            return None
-        from pathlib import Path
+        # Fall back to the notes folder so past meeting notes feed live suggestions
+        # out of the box (the same .md files we also ingest into MemPalace).
+        folder = Path(self.settings.kb_folder) if self.settings.kb_folder else self.settings.notes_dir
         embed_fn = self._get_embed_fn()
         if not embed_fn:
             return None
-        return KnowledgeBase(folder=Path(self.settings.kb_folder), embed_fn=embed_fn)
+        return KnowledgeBase(folder=folder, embed_fn=embed_fn)
 
     def _get_embed_fn(self):
         provider = self.settings.embedding_provider
@@ -93,6 +100,62 @@ class AppCoordinator(QObject):
             )
             return client.complete
         return None
+
+    def _migrate_legacy_env(self) -> None:
+        """One-time import of Notion credentials from the old project's .env
+        (C:\\Meeting_Transcript\\.env) into settings + keyring, so the rebuild
+        works out of the box without re-entering keys."""
+        if self.settings.notion_page_id and (self.settings.get_secret("notion_api_key")):
+            return
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+        if not env_path.exists():
+            return
+        try:
+            values = {}
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                values[k.strip()] = v.strip()
+        except OSError:
+            return
+
+        api_key = values.get("NOTION_API_KEY")
+        page_id = values.get("NOTION_PAGE_ID")
+        changed = False
+        if page_id and not self.settings.notion_page_id:
+            self.settings.notion_page_id = page_id
+            changed = True
+        if api_key and not self.settings.get_secret("notion_api_key"):
+            self.settings.set_secret("notion_api_key", api_key)
+            changed = True
+        if changed and api_key and page_id:
+            self.settings.notion_enabled = True
+            self.settings.save()
+            logger.info("Migrated Notion credentials from legacy .env; Notion export enabled")
+
+    async def _ingest_to_mempalace(self) -> None:
+        """Mine the notes folder into MemPalace so finished meetings become
+        searchable memories. Runs the mempalace CLI as a subprocess (the CLI
+        lives in a different Python env than this app)."""
+        exe = self.settings.mempalace_exe or "mempalace"
+        notes_dir = str(self.settings.notes_dir)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+        def _run():
+            import subprocess
+            return subprocess.run(
+                [exe, "mine", notes_dir],
+                capture_output=True, text=True, env=env, timeout=600,
+            )
+
+        result = await asyncio.to_thread(_run)
+        if result.returncode == 0:
+            logger.info("MemPalace ingest OK (%s)", notes_dir)
+            self.toast_requested.emit("Notes filed into MemPalace", "success")
+        else:
+            logger.warning("MemPalace ingest failed (%s): %s", result.returncode, result.stderr[:500])
 
     async def start_session(self) -> None:
         self.transcript_store.clear()
@@ -153,6 +216,8 @@ class AppCoordinator(QObject):
 
         if self._session_store:
             topic = self.transcript_store.conversation_state.topic or "Meeting"
+            self._last_session_id = self._session_store.session_id
+            self._last_title = topic
             index = self._session_store.finalize(title=topic, template_id=None)
             self.session_ended.emit(index)
 
@@ -165,17 +230,70 @@ class AppCoordinator(QObject):
             return
         try:
             chunk = await self.notes_engine.generate(utterances)
-            if chunk:
-                self.notes_chunk_ready.emit(chunk)
         except Exception as exc:
             logger.warning("Notes generation failed: %s", exc)
+            return
+        if not chunk:
+            return
+        self.notes_chunk_ready.emit(chunk)
+        await self._persist_and_export(chunk, utterances)
+
+    async def _persist_and_export(self, notes_text: str, utterances=None) -> None:
+        """Write notes to a .md file (upstream never did this), then push to Notion
+        and ingest into MemPalace if those integrations are enabled."""
+        session_id = self._last_session_id
+        if not session_id:
+            return
+        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        page_title = f"{self._last_title} - {date_str}"
+
+        notes_path = self.settings.notes_dir / f"{session_id}.md"
+        try:
+            await asyncio.to_thread(
+                notes_path.write_text,
+                f"# {page_title}\n\n{notes_text}\n",
+                "utf-8",
+            )
+            logger.info("Notes written: %s", notes_path)
+        except OSError as exc:
+            logger.warning("Could not write notes file: %s", exc)
+
+        if self.settings.notion_enabled:
+            try:
+                await self._export_to_notion(page_title, notes_text, utterances)
+                self.toast_requested.emit("Notes + transcript saved to Notion", "success")
+            except Exception as exc:
+                logger.warning("Notion export failed: %s", exc)
+                self.toast_requested.emit(f"Notion export failed: {exc}", "error")
+
+        if self.settings.mempalace_enabled:
+            try:
+                await self._ingest_to_mempalace()
+            except Exception as exc:
+                logger.warning("MemPalace ingest failed: %s", exc)
+
+    async def _export_to_notion(self, title: str, notes_text: str, utterances=None) -> None:
+        api_key = self.settings.get_secret("notion_api_key") or ""
+        page_id = self.settings.notion_page_id
+        if not api_key or not page_id:
+            logger.info("Notion enabled but API key or page id missing — skipping export")
+            return
+        from integrations.notion import NotionExporter
+        exporter = NotionExporter(api_key=api_key, parent_page_id=page_id)
+        await exporter.create_page(title, notes_text, utterances=utterances)
 
     def _on_utterance(self, utterance: Utterance) -> None:
         self.transcript_store.append(utterance)
         if self._session_store:
             self._session_store.write_utterance(utterance)
-        if self.suggestion_engine:
+        # Respect the live Ideas toggle — skip the LLM-gated suggestion pipeline when off
+        if self.suggestion_engine and self.settings.suggestions_enabled:
             asyncio.create_task(self.suggestion_engine.on_utterance(utterance))
+
+    def set_suggestions_enabled(self, enabled: bool) -> None:
+        """Toggle live suggestions on/off mid-session. Persists the preference."""
+        self.settings.suggestions_enabled = bool(enabled)
+        self.settings.save()
 
     def _on_suggestion(self, suggestion: Suggestion) -> None:
         if self._session_store:

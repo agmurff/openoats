@@ -1,4 +1,4 @@
-# openoats.spec
+# openoats.spec - one-folder build for the installer
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
@@ -9,6 +9,9 @@ hiddenimports = [
     "keyring.backends.Windows",
     "qasync",
     "silero_vad",
+    # Our integrations (lazy-imported from coordinator, so list explicitly)
+    "integrations.notion",
+    "httpx",
 ]
 
 for pkg in ["ctranslate2", "faster_whisper", "silero_vad"]:
@@ -29,9 +32,17 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    [],
+    exclude_binaries=True,
     name="OpenOats",
     console=False,
     icon=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="OpenOats",
 )

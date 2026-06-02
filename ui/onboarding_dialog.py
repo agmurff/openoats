@@ -40,9 +40,12 @@ class OnboardingDialog(QDialog):
         layout.addWidget(llm_label)
         self._provider = QComboBox()
         self._provider.addItems(["openrouter", "ollama"])
+        # Honor whatever the current setting is (local-first defaults pick "ollama")
+        if self.settings.llm_provider in ("openrouter", "ollama"):
+            self._provider.setCurrentText(self.settings.llm_provider)
         layout.addWidget(self._provider)
         self._api_key = QLineEdit()
-        self._api_key.setPlaceholderText("OpenRouter API key (sk-or-...)")
+        self._api_key.setPlaceholderText("OpenRouter API key (sk-or-...) — leave blank for local mode")
         self._api_key.setEchoMode(QLineEdit.EchoMode.Password)
         layout.addWidget(self._api_key)
 
@@ -74,7 +77,12 @@ class OnboardingDialog(QDialog):
         self._model = QComboBox()
         for label, _ in self._MODELS:
             self._model.addItem(label)
-        self._model.setCurrentIndex(3)
+        # Preselect the current setting
+        model_ids = [m for _, m in self._MODELS]
+        self._model.setCurrentIndex(
+            model_ids.index(self.settings.transcription_model)
+            if self.settings.transcription_model in model_ids else 2
+        )
         layout.addWidget(self._model)
 
         layout.addStretch()

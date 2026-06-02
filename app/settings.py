@@ -6,13 +6,15 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DEFAULTS = {
-    "llm_provider": "openrouter",
+    # Local-first defaults: everything runs on-device (Ollama LLM + embeddings,
+    # faster-whisper transcription) so no meeting data leaves the machine.
+    "llm_provider": "ollama",
     "llm_model": "openai/gpt-4o-mini",
-    "transcription_model": "small.en",
-    "embedding_provider": "voyage",
+    "transcription_model": "base.en",  # ~142 MB, CPU-friendly
+    "embedding_provider": "ollama",
     "embedding_model": "voyage-3-lite",
     "ollama_base_url": "http://localhost:11434",
-    "ollama_llm_model": "llama3",
+    "ollama_llm_model": "qwen2.5:3b",  # lightweight Qwen for CPU; change + `ollama pull` as desired
     "ollama_embedding_model": "nomic-embed-text",
     "custom_base_url": "http://localhost:1234/v1",
     "custom_llm_model": "local-model",
@@ -21,6 +23,17 @@ DEFAULTS = {
     "input_device": None,
     "hide_from_screen_capture": False,
     "recording_consent_acknowledged": False,
+    "suggestions_enabled": True,  # live ideas/suggestions during a meeting (toggle in UI)
+    # Notion export (Phase 2)
+    "notion_enabled": False,
+    "notion_page_id": "",
+    # MemPalace + post-session ingest (Phase 3)
+    "mempalace_enabled": False,
+    "mempalace_exe": "mempalace",
+    # GitHub-based update check on launch
+    "check_for_updates": True,
+    "github_owner": "agmurff",
+    "github_repo": "openoats",
 }
 
 

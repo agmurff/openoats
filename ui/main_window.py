@@ -157,6 +157,16 @@ class MainWindow(QMainWindow):
         self._mute_btn.clicked.connect(self._toggle_mute)
         controls.addWidget(self._mute_btn)
 
+        # Ideas (live suggestions) toggle — persists across sessions
+        self._ideas_btn = QPushButton()
+        self._ideas_btn.setObjectName("ideas_btn")
+        self._ideas_btn.setCheckable(True)
+        self._ideas_btn.setChecked(self._coordinator.settings.suggestions_enabled)
+        self._ideas_btn.setToolTip("Live ideas from your knowledge base during the meeting")
+        self._ideas_btn.clicked.connect(self._toggle_ideas)
+        self._refresh_ideas_label()
+        controls.addWidget(self._ideas_btn)
+
         self._notes_btn = QPushButton("Notes")
         self._notes_btn.setObjectName("notes_btn")
         self._notes_btn.setToolTip("Open meeting notes")
@@ -281,6 +291,14 @@ class MainWindow(QMainWindow):
     def _toggle_mute(self, checked: bool):
         self._coordinator._mic.muted = checked
         self._mute_btn.setText("Unmute" if checked else "Mute")
+
+    def _toggle_ideas(self, checked: bool):
+        self._coordinator.set_suggestions_enabled(checked)
+        self._refresh_ideas_label()
+
+    def _refresh_ideas_label(self):
+        on = self._ideas_btn.isChecked()
+        self._ideas_btn.setText("💡 Ideas: ON" if on else "💡 Ideas: OFF")
 
     def _open_notes(self):
         self._notes_window.show_and_raise()

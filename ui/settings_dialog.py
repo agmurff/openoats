@@ -124,6 +124,36 @@ class SettingsDialog(QDialog):
         kb_layout.addStretch()
         tabs.addTab(kb_tab, "Knowledge Base")
 
+        # Integrations tab (Notion export + MemPalace ingest)
+        integ_tab = QWidget()
+        integ_layout = QVBoxLayout(integ_tab)
+        self._notion_enabled = QCheckBox("Save session notes to Notion")
+        self._notion_enabled.setChecked(self.settings.notion_enabled)
+        integ_layout.addWidget(self._notion_enabled)
+        integ_layout.addWidget(QLabel("Notion API Key"))
+        self._notion_key = QLineEdit()
+        self._notion_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self._notion_key.setPlaceholderText("secret_... / ntn_...")
+        self._notion_key.setText(self.settings.get_secret("notion_api_key") or "")
+        integ_layout.addWidget(self._notion_key)
+        integ_layout.addWidget(QLabel("Notion Parent Page ID"))
+        self._notion_page = QLineEdit(self.settings.notion_page_id)
+        self._notion_page.setPlaceholderText("32-char page id from the page URL")
+        integ_layout.addWidget(self._notion_page)
+
+        sep = QLabel("MemPalace")
+        sep.setStyleSheet("color: #8b7e72; font-size: 11px; margin-top: 10px;")
+        integ_layout.addWidget(sep)
+        self._mempalace_enabled = QCheckBox("File finished meetings into MemPalace")
+        self._mempalace_enabled.setChecked(self.settings.mempalace_enabled)
+        integ_layout.addWidget(self._mempalace_enabled)
+        integ_layout.addWidget(QLabel("mempalace command / path"))
+        self._mempalace_exe = QLineEdit(self.settings.mempalace_exe)
+        self._mempalace_exe.setPlaceholderText("mempalace")
+        integ_layout.addWidget(self._mempalace_exe)
+        integ_layout.addStretch()
+        tabs.addTab(integ_tab, "Integrations")
+
         # Privacy tab
         privacy_tab = QWidget()
         privacy_layout = QVBoxLayout(privacy_tab)
@@ -162,8 +192,15 @@ class SettingsDialog(QDialog):
         self.settings.input_device = self._input_device_indices[self._input_device.currentIndex()]
         self.settings.kb_folder = self._kb_folder.text() or None
         self.settings.hide_from_screen_capture = self._hide_screen.isChecked()
+        self.settings.notion_enabled = self._notion_enabled.isChecked()
+        self.settings.notion_page_id = self._notion_page.text().strip()
+        self.settings.mempalace_enabled = self._mempalace_enabled.isChecked()
+        self.settings.mempalace_exe = self._mempalace_exe.text().strip() or "mempalace"
         self.settings.save()
         key = self._openrouter_key.text().strip()
         if key:
             self.settings.set_secret("openrouter_api_key", key)
+        notion_key = self._notion_key.text().strip()
+        if notion_key:
+            self.settings.set_secret("notion_api_key", notion_key)
         self.accept()

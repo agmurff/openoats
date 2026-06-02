@@ -1,6 +1,8 @@
+import os
 import sys
 import asyncio
 import logging
+from pathlib import Path
 import qasync
 from PySide6.QtWidgets import QApplication
 from app.coordinator import AppCoordinator
@@ -8,12 +10,18 @@ from app.settings import AppSettings
 from ui.main_window import MainWindow
 from ui.styles import DARK_THEME
 
+# Log to %LOCALAPPDATA%\OpenOats\openoats.log — the install dir under Program Files
+# is read-only for non-elevated users.
+_log_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "OpenOats"
+_log_dir.mkdir(parents=True, exist_ok=True)
+_log_path = _log_dir / "openoats.log"
+
 logging.basicConfig(
     level=logging.WARNING,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
     handlers=[
         logging.StreamHandler(sys.stderr),
-        logging.FileHandler("openoats.log", encoding="utf-8"),
+        logging.FileHandler(str(_log_path), encoding="utf-8"),
     ],
 )
 # Keep our own modules at INFO
@@ -40,6 +48,49 @@ def main():
     coordinator = AppCoordinator(settings=settings)
     window = MainWindow(coordinator)
     window.show()
+
+    # Prereq check — local LLM stack lives outside the installer
+    from app.prereq_check import check_prereqs, build_message
+    status = check_prereqs(
+        ollama_url=settings.ollama_base_url,
+        llm_model=settings.ollama_llm_model,
+        embed_model=settings.ollama_embedding_model,
+        mempalace_exe=settings.mempalace_exe,
+    )
+    if not status.all_ok:
+        from PySide6.QtWidgets import QMessageBox
+        box = QMessageBox(window)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("OpenOats — Setup needed")
+        box.setText("Some local components are missing.")
+        box.setInformativeText(build_message(status, settings.ollama_llm_model,
+                                             settings.ollama_embedding_model))
+        box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        box.show()
+
+    # GitHub update check — non-blocking; pops a dialog only if newer release is found
+    if settings.check_for_updates:
+        from app.updater import schedule_check
+        from app import __version__ as _CUR
+
+        def _on_release(info: dict) -> None:
+            from PySide6.QtWidgets import QMessageBox
+            import webbrowser
+            box = QMessageBox(window)
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setWindowTitle("OpenOats update available")
+            box.setText(f"A newer release is available: {info['tag']} (you have v{_CUR}).")
+            body = (info.get("body") or "")[:600]
+            box.setInformativeText(body + "\n\nOpen the release page to download?")
+            box.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if box.exec() == QMessageBox.StandardButton.Yes:
+                webbrowser.open(info.get("asset_url") or info.get("url"))
+
+        loop.call_soon(
+            lambda: schedule_check(settings.github_owner, settings.github_repo, _on_release)
+        )
 
     from ui.system_tray import SystemTray
     window._tray = SystemTray(main_window=window, coordinator=coordinator)
