@@ -17,13 +17,16 @@ _log_dir.mkdir(parents=True, exist_ok=True)
 _log_path = _log_dir / "openoats.log"
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
     handlers=[
         logging.StreamHandler(sys.stderr),
         logging.FileHandler(str(_log_path), encoding="utf-8"),
     ],
 )
+# Capture everything that would otherwise die silently in a windowed build.
+from app.diagnostics import install as _install_diagnostics, attach_to_loop as _attach_diag_loop
+_install_diagnostics(_log_path)
 # Keep our own modules at INFO
 for _mod in ("app", "audio", "transcription", "intelligence", "storage"):
     logging.getLogger(_mod).setLevel(logging.INFO)
@@ -44,6 +47,7 @@ def main():
 
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
+    _attach_diag_loop(loop)  # qasync just installed the loop — capture its task errors
 
     coordinator = AppCoordinator(settings=settings)
     window = MainWindow(coordinator)
@@ -112,4 +116,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        logging.getLogger("openoats").critical("Fatal error in main()", exc_info=True)
+        raise
