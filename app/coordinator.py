@@ -158,30 +158,44 @@ class AppCoordinator(QObject):
             logger.warning("MemPalace ingest failed (%s): %s", result.returncode, result.stderr[:500])
 
     async def start_session(self) -> None:
+        # Breadcrumbs at every milestone — if start_session crashes natively,
+        # the last log line tells us exactly which step died.
+        logger.info("start_session: begin (model=%s, transcript backend=base)",
+                    self.settings.transcription_model)
         self.transcript_store.clear()
 
         self._session_store = SessionStore(
             session_dir=self.settings.session_dir,
             notes_dir=self.settings.notes_dir,
         )
+        logger.info("start_session: session store opened (id=%s)", self._session_store.session_id)
 
         self.toast_requested.emit("Loading transcription model…", "info")
+        logger.info("start_session: loading TranscriptionEngine (this can download the model)")
         self._engine = await asyncio.to_thread(
             TranscriptionEngine,
             model_dir=self.settings.model_dir,
             model_size=self.settings.transcription_model,
         )
+        logger.info("start_session: TranscriptionEngine loaded")
 
+        logger.info("start_session: starting mic capture")
         self._mic.start()
         if not self._mic.available:
+            logger.warning("start_session: mic unavailable")
             self.toast_requested.emit(
                 "Microphone access denied — check Windows Privacy Settings > Microphone", "error"
             )
             return
+        logger.info("start_session: mic OK")
 
+        logger.info("start_session: starting WASAPI loopback (system audio)")
         self._sys.start()
         if not self._sys.available:
+            logger.warning("start_session: system audio unavailable")
             self.system_audio_unavailable.emit()
+        else:
+            logger.info("start_session: system audio OK")
         self._engine.on_utterance = self._on_utterance
         self._engine.on_partial = self.transcript_store.update_partial
 
@@ -198,10 +212,12 @@ class AppCoordinator(QObject):
             system_prompt=get_prompt(self.settings.notes_template),
         )
 
+        logger.info("start_session: launching transcription task")
         self._engine_task = asyncio.create_task(
             self._engine.start(self._mic.stream(), self._sys.stream())
         )
         self.session_started.emit()
+        logger.info("start_session: complete — recording")
 
     async def end_session(self) -> None:
         if self._engine_task:

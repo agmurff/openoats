@@ -5,7 +5,7 @@
 
 #define MyAppName        "OpenOats Meeting Assistant"
 #define MyAppShortName   "OpenOats"
-#define MyAppVersion     "0.1.2"
+#define MyAppVersion     "0.1.3"
 #define MyAppPublisher   "Adam Murphy"
 #define MyAppExeName     "OpenOats.exe"
 #define MyAppId          "{{2003B55F-B4EF-451B-8F8A-BE591E7F0482}"

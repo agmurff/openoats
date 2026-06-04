@@ -16,13 +16,16 @@ _log_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "OpenOats"
 _log_dir.mkdir(parents=True, exist_ok=True)
 _log_path = _log_dir / "openoats.log"
 
+# Build handler list — only add a stderr StreamHandler if stderr actually exists.
+# Under PyInstaller console=False, sys.stderr is None and StreamHandler.emit crashes.
+_handlers: list[logging.Handler] = [logging.FileHandler(str(_log_path), encoding="utf-8")]
+if sys.stderr is not None:
+    _handlers.append(logging.StreamHandler(sys.stderr))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stderr),
-        logging.FileHandler(str(_log_path), encoding="utf-8"),
-    ],
+    handlers=_handlers,
 )
 # Capture everything that would otherwise die silently in a windowed build.
 from app.diagnostics import install as _install_diagnostics, attach_to_loop as _attach_diag_loop

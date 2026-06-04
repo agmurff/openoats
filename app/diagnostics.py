@@ -12,6 +12,7 @@ so the next crash leaves a full traceback in openoats.log.
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import logging
 import sys
 import threading
@@ -19,8 +20,23 @@ from pathlib import Path
 
 logger = logging.getLogger("openoats.diagnostics")
 
+# Hold onto the faulthandler stream so it isn't GC'd while the process is alive.
+_FAULT_STREAM = None
+
 
 def install(log_path: Path) -> None:
+    # 0. Native-code crash handler — the previous crash left no Python traceback
+    # because faster-whisper / ctranslate2 / Qt audio code can SIGSEGV/abort
+    # without raising a Python exception. faulthandler writes the C-level stack
+    # of every thread to this file before the process dies.
+    global _FAULT_STREAM
+    try:
+        _FAULT_STREAM = open(str(log_path), "a", buffering=1, encoding="utf-8", errors="replace")
+        faulthandler.enable(file=_FAULT_STREAM, all_threads=True)
+    except OSError as exc:
+        # Fall back to default (stderr) if file open fails
+        logger.warning("faulthandler file open failed: %s", exc)
+        faulthandler.enable(all_threads=True)
     # 1. Main-thread excepthook
     def _excepthook(exc_type, exc, tb):
         logger.critical("Unhandled exception", exc_info=(exc_type, exc, tb))
