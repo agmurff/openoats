@@ -10,7 +10,8 @@ class OllamaClient(BaseLLMClient, BaseEmbeddingClient):
 
     async def complete(self, messages: list[dict], stream: bool = False) -> str:
         payload = {"model": self._llm, "messages": messages, "stream": False}
-        async with httpx.AsyncClient(timeout=60) as client:
+        # 10 min — long-meeting notes on a small CPU Qwen can easily run past 60s.
+        async with httpx.AsyncClient(timeout=600) as client:
             try:
                 resp = await client.post(f"{self._base}/api/chat", json=payload)
             except httpx.ConnectError:

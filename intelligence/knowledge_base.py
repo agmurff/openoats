@@ -1,12 +1,26 @@
 import asyncio
 import hashlib
 import json
+import logging
+import os
 import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Awaitable
 
 SUPPORTED_EXTENSIONS = {".md", ".txt"}
+
+logger = logging.getLogger(__name__)
+
+
+def _cache_dir_for(folder: Path) -> Path:
+    """Cache lives under %LOCALAPPDATA% (always user-writable) keyed by the
+    KB folder's absolute path hash. Storing it inside the KB folder broke
+    silently when kb_folder pointed at a read-only location (Program Files)."""
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "OpenOats" / "kb_cache"
+    digest = hashlib.md5(str(folder.resolve()).encode("utf-8")).hexdigest()[:12]
+    safe_name = folder.name or "root"
+    return base / f"{safe_name}-{digest}"
 
 
 @dataclass
@@ -42,7 +56,8 @@ class KnowledgeBase:
     def __init__(self, folder: Path, embed_fn: Callable[[list[str]], Awaitable[list[list[float]]]]):
         self._folder = folder
         self._embed = embed_fn
-        self._cache_dir = folder / ".openoats_cache"
+        self._cache_dir = _cache_dir_for(folder)
+        logger.info("KB folder=%s cache=%s", folder, self._cache_dir)
         self._chunks: list[dict] = []
         self._embeddings: np.ndarray | None = None
 
@@ -52,7 +67,8 @@ class KnowledgeBase:
 
     async def index(self, progress_cb=None) -> None:
         """Index the knowledge base folder. Blocking I/O is offloaded to a thread."""
-        self._cache_dir.mkdir(exist_ok=True)
+        # parents=True — cache lives under %LOCALAPPDATA% now, may not exist yet
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
         manifest_path = self._cache_dir / "manifest.json"
         emb_path = self._cache_dir / "embeddings.npy"
 
