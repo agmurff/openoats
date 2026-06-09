@@ -1,4 +1,9 @@
 import os
+# MUST be set before any import that pulls torch / ctranslate2. PyInstaller
+# bundles libiomp5md.dll from BOTH torch and ctranslate2; without this flag
+# ctranslate2 SIGABRTs the moment WhisperModel loads on Record.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import sys
 import asyncio
 import logging
