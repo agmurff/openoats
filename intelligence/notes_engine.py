@@ -51,3 +51,29 @@ class NotesEngine:
         if self._task:
             self._task.cancel()
         self.is_generating = False
+
+
+async def generate_title(llm_complete, notes_text: str) -> str:
+    """Ask the LLM for a short, specific meeting title based on the notes.
+    Returns a cleaned single-line title, or '' on any failure (caller falls
+    back to a generic title)."""
+    messages = [
+        {"role": "system", "content": (
+            "You name meetings. Reply with ONLY a title for this meeting: "
+            "3-7 words, no dates, no quotes, no trailing punctuation. "
+            "Use the concrete project, product, or customer names that appear "
+            "in the notes — never generic words like 'Meeting', 'Discussion', "
+            "'Decisions', or 'Update' on their own. Example good titles: "
+            "'Selwyn LR9 Rollout Planning', 'Q3 Pricing Model Review'."
+        )},
+        {"role": "user", "content": notes_text[:4000]},
+    ]
+    try:
+        raw = await llm_complete(messages)
+    except Exception:
+        return ""
+    title = (raw or "").strip().strip('"').strip("'").splitlines()[0].strip()
+    # Guard against the model rambling — a real title is short.
+    if not title or len(title) > 80:
+        return ""
+    return title.rstrip(".!")

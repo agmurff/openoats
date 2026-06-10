@@ -39,6 +39,25 @@ def detect_trigger(utterance: Utterance) -> SuggestionTrigger | None:
     return None
 
 
+def parse_llm_json(raw: str) -> dict | None:
+    """Small local models routinely wrap JSON in ```json fences or add prose.
+    Strip fences and extract the first {...} block before parsing."""
+    if not raw:
+        return None
+    text = raw.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        obj = json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
 def pre_filter(utterance: Utterance, last_suggestion_time: datetime | None) -> bool:
     text = utterance.text.strip()
     if len(text.split()) < MIN_WORDS or len(text) < MIN_CHARS:
@@ -83,11 +102,11 @@ class SuggestionEngine:
         ]
         try:
             raw = await self._llm(state_prompt)
-            new_state = json.loads(raw)
-            for k, v in new_state.items():
+            new_state = parse_llm_json(raw)
+            for k, v in (new_state or {}).items():
                 if hasattr(self._state, k):
                     setattr(self._state, k, v)
-        except (json.JSONDecodeError, Exception):
+        except Exception:
             pass
 
         queries = [utterance.text, self._state.topic]
@@ -109,8 +128,11 @@ class SuggestionEngine:
         ]
         try:
             raw = await self._llm(gate_prompt)
-            data = json.loads(raw)
-        except (json.JSONDecodeError, Exception):
+        except Exception:
+            return
+        data = parse_llm_json(raw)
+        if data is None:
+            logger.debug("suggestion gate returned unparseable output: %.200s", raw)
             return
 
         decision = SuggestionDecision(

@@ -1,41 +1,69 @@
+_STYLE = (
+    "Be ruthless about brevity. Bullets only, no preamble, no closing remarks, "
+    "no restating the transcript. Max 8 words of context per bullet beyond the fact itself. "
+    "Skip any section with nothing to report (omit the heading entirely). "
+    "Never invent owners, dates, or decisions that weren't said."
+)
+
 TEMPLATES: list[tuple[str, str]] = [
     (
         "Generic",
-        "Summarize this meeting as structured notes with key decisions, action items, and topics discussed.",
+        (
+            "Produce tight meeting notes in this exact structure:\n"
+            "## Decisions\n- (each decision, one line)\n"
+            "## Action Items\n- Owner: task (due date if stated)\n"
+            "## Key Points\n- (max 5 bullets, only things someone would need to recall later)\n"
+            f"\n{_STYLE}"
+        ),
     ),
     (
         "1:1",
         (
-            "Summarize this 1:1 meeting as structured notes. Include: discussion topics, "
-            "feedback given and received, agreed action items with owners, and any follow-ups."
+            "Produce tight 1:1 notes:\n"
+            "## Feedback\n- (given and received, one line each)\n"
+            "## Action Items\n- Owner: task\n"
+            "## Follow-ups\n- (only if explicitly agreed)\n"
+            f"\n{_STYLE}"
         ),
     ),
     (
         "Customer Discovery",
         (
-            "Summarize this customer discovery call. Include: customer pain points, "
-            "job-to-be-done, memorable quotes, product signals, and next steps."
+            "Produce tight discovery-call notes:\n"
+            "## Pain Points\n- (one line each)\n"
+            "## Product Signals\n- (feature asks, willingness to pay, objections)\n"
+            "## Quotes\n- (max 2, verbatim, only if genuinely revealing)\n"
+            "## Next Steps\n- Owner: task\n"
+            f"\n{_STYLE}"
         ),
     ),
     (
         "Hiring Interview",
         (
-            "Summarize this hiring interview. Include: candidate strengths, concerns, "
-            "notes by interview topic, and a hiring recommendation with rationale."
+            "Produce tight interview notes:\n"
+            "## Strengths\n- (one line each)\n"
+            "## Concerns\n- (one line each)\n"
+            "## Recommendation\n- Hire / no-hire / lean, with one-line rationale\n"
+            f"\n{_STYLE}"
         ),
     ),
     (
         "Stand-Up",
         (
-            "Summarize this stand-up meeting. For each person capture: what they did, "
-            "what they plan to do, and any blockers. List any cross-team action items."
+            "Produce tight stand-up notes:\n"
+            "## By Person\n- Name: did X, next Y, blocked on Z (omit empty parts)\n"
+            "## Cross-team Actions\n- Owner: task\n"
+            f"\n{_STYLE}"
         ),
     ),
     (
         "Weekly Meeting",
         (
-            "Summarize this weekly team meeting. Include: agenda items covered, "
-            "key decisions, action items with owners and due dates, and open questions."
+            "Produce tight weekly-meeting notes:\n"
+            "## Decisions\n- (one line each)\n"
+            "## Action Items\n- Owner: task (due date if stated)\n"
+            "## Open Questions\n- (only if left unresolved)\n"
+            f"\n{_STYLE}"
         ),
     ),
 ]

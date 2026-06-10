@@ -79,8 +79,12 @@ def transcribe(audio_path: Path, model_dir: Path, model_size: str = "base.en") -
     return utterances
 
 
-def render_notes_md(title: str, notes_text: str, utterances: list[Utterance]) -> str:
-    lines = [f"# {title}", "", notes_text, "", "## Transcript", ""]
+def render_notes_md(title: str, notes_text: str) -> str:
+    return f"# {title}\n\n{notes_text}\n"
+
+
+def render_transcript_md(title: str, utterances: list[Utterance]) -> str:
+    lines = [f"# Transcript — {title}", ""]
     for u in utterances:
         ts = u.timestamp.strftime("%H:%M:%S")
         lines.append(f"- **{ts}** {u.text}")
@@ -161,9 +165,6 @@ async def main() -> int:
         return 1
 
     settings = AppSettings()
-    title_root = args.title or args.audio.stem
-    date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    title = f"{title_root} - {date_str}"
 
     utterances = transcribe(args.audio, settings.model_dir, settings.transcription_model)
     if not utterances:
@@ -172,16 +173,31 @@ async def main() -> int:
 
     notes_text = await summarize(utterances, args.template or settings.notes_template)
 
-    # Write notes .md (same shape the live app uses, so MemPalace mining covers it)
+    # Meeting-specific title from the LLM; --title / filename as fallback.
+    title_root = args.title or args.audio.stem
+    from intelligence.notes_engine import generate_title
+    client = OllamaClient(
+        settings.ollama_base_url, settings.ollama_llm_model, settings.ollama_embedding_model,
+    )
+    generated = await generate_title(client.complete, notes_text)
+    if generated:
+        title_root = generated
+        log.info("generated title: %s", generated)
+    title = f"{title_root} ({datetime.now().strftime('%Y-%m-%d')})"
+
+    # Notes .md goes in the KB-indexed notes folder; transcript goes in
+    # sessions (kept out of the KB and out of Notion — recall noise).
     session_id = str(uuid4())
     notes_path = settings.notes_dir / f"{session_id}.md"
     notes_path.parent.mkdir(parents=True, exist_ok=True)
-    notes_path.write_text(
-        render_notes_md(title, notes_text, utterances), encoding="utf-8",
-    )
+    notes_path.write_text(render_notes_md(title, notes_text), encoding="utf-8")
     log.info("notes written: %s", notes_path)
 
-    await push_notion(title, notes_text, utterances)
+    transcript_path = settings.session_dir / f"{session_id}.transcript.md"
+    transcript_path.write_text(render_transcript_md(title, utterances), encoding="utf-8")
+    log.info("transcript written: %s", transcript_path)
+
+    await push_notion(title, notes_text, utterances=None)
     mempalace_mine(settings.notes_dir)
     log.info("done.")
     return 0

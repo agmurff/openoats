@@ -260,8 +260,17 @@ class AppCoordinator(QObject):
         session_id = self._last_session_id
         if not session_id:
             return
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        page_title = f"{self._last_title} - {date_str}"
+
+        # Ask the LLM for a meeting-specific title; fall back to the topic/state title.
+        title_root = self._last_title
+        llm_fn = self._get_llm_fn()
+        if llm_fn:
+            from intelligence.notes_engine import generate_title
+            generated = await generate_title(llm_fn, notes_text)
+            if generated:
+                title_root = generated
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        page_title = f"{title_root} ({date_str})"
 
         notes_path = self.settings.notes_dir / f"{session_id}.md"
         try:
@@ -276,8 +285,10 @@ class AppCoordinator(QObject):
 
         if self.settings.notion_enabled:
             try:
-                await self._export_to_notion(page_title, notes_text, utterances)
-                self.toast_requested.emit("Notes + transcript saved to Notion", "success")
+                # Notes only — the full transcript stays local (session .jsonl) and
+                # cluttered the Notion page without adding recall value.
+                await self._export_to_notion(page_title, notes_text, utterances=None)
+                self.toast_requested.emit("Notes saved to Notion", "success")
             except Exception as exc:
                 logger.warning("Notion export failed: %s", exc)
                 self.toast_requested.emit(f"Notion export failed: {exc}", "error")
