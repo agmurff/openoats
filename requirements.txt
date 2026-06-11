@@ -10,5 +10,6 @@ torchaudio~=2.3.0  # MUST match torch version (resolver otherwise grabs an ABI-i
 requests~=2.32     # transitive dep faster-whisper imports but no longer pulls in automatically
 httpx~=0.27.0
 keyring~=25.2.0
+pywin32>=306        # Outlook COM calendar matching (classic Outlook)
 numpy~=1.26.0
 scipy~=1.13.0

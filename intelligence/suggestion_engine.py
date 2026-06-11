@@ -70,10 +70,12 @@ def pre_filter(utterance: Utterance, last_suggestion_time: datetime | None) -> b
 
 
 class SuggestionEngine:
-    def __init__(self, kb: KnowledgeBase, llm_complete, on_suggestion: Callable[[Suggestion], None]):
+    def __init__(self, kb: KnowledgeBase, llm_complete, on_suggestion: Callable[[Suggestion], None],
+                 meeting_context: str = ""):
         self._kb = kb
         self._llm = llm_complete
         self._on_suggestion = on_suggestion
+        self._meeting_context = meeting_context  # calendar subject/attendees/agenda
         self._state = ConversationState()
         self._last_suggestion: datetime | None = None
         self._recent: list[Utterance] = []
@@ -96,9 +98,10 @@ class SuggestionEngine:
 
     async def _run_pipeline(self, utterance: Utterance, trigger: SuggestionTrigger) -> None:
         context = "\n".join(f"{u.speaker}: {u.text}" for u in self._recent[-6:])
+        meeting_part = f"{self._meeting_context}\n\n" if self._meeting_context else ""
         state_prompt = [
             {"role": "system", "content": "Update the conversation state as JSON: {topic, summary, open_questions, tensions, decisions, goals}."},
-            {"role": "user", "content": f"Transcript:\n{context}\n\nCurrent state: {json.dumps(self._state.__dict__)}"},
+            {"role": "user", "content": f"{meeting_part}Transcript:\n{context}\n\nCurrent state: {json.dumps(self._state.__dict__)}"},
         ]
         try:
             raw = await self._llm(state_prompt)
@@ -109,7 +112,11 @@ class SuggestionEngine:
         except Exception:
             pass
 
-        queries = [utterance.text, self._state.topic]
+        # The calendar subject names the project — it anchors KB search to the
+        # right material even in the first minutes before the topic state warms up.
+        subject_line = self._meeting_context.splitlines()[0].removeprefix("Meeting: ") \
+            if self._meeting_context else ""
+        queries = [utterance.text, self._state.topic, subject_line]
         results = []
         for q in queries:
             if q:
@@ -122,9 +129,10 @@ class SuggestionEngine:
             {"role": "system", "content": (
                 "You are a meeting assistant. Given the utterance and evidence, decide whether to surface a suggestion. "
                 "Respond as JSON: {relevance, helpfulness, novelty, timing, surfaced, headline, coaching, text}. "
-                "All scores 0.0–1.0. Only set surfaced=true if relevance >= 0.72 AND the suggestion is genuinely helpful."
+                "All scores 0.0–1.0. Only set surfaced=true if relevance >= 0.72 AND the suggestion is genuinely helpful "
+                "for THIS meeting's purpose."
             )},
-            {"role": "user", "content": f"Utterance: {utterance.text}\n\nEvidence:\n{evidence_text}"},
+            {"role": "user", "content": f"{meeting_part}Utterance: {utterance.text}\n\nEvidence:\n{evidence_text}"},
         ]
         try:
             raw = await self._llm(gate_prompt)

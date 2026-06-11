@@ -42,7 +42,17 @@ def chunk_text(text: str, max_chars: int = 500) -> list[str]:
             current += s + ". "
     if current.strip():
         chunks.append(current.strip())
-    return chunks or [text[:max_chars]]
+    # Tables (e.g. converted spreadsheets) have no '. ' separators, so a whole
+    # sheet can land in one chunk that blows past the embedding model's context
+    # window and 500s. Hard-split anything oversize.
+    hard_max = max_chars * 3
+    final: list[str] = []
+    for c in chunks or [text[:max_chars]]:
+        if len(c) <= hard_max:
+            final.append(c)
+        else:
+            final.extend(c[i:i + hard_max] for i in range(0, len(c), hard_max))
+    return final
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -96,23 +106,46 @@ class KnowledgeBase:
             lambda: [f for f in self._folder.rglob("*") if f.suffix in SUPPORTED_EXTENSIONS]
         )
         new_manifest, all_chunks = [], []
+        failed = 0
+
+        def _save_cache():
+            if all_chunks:
+                embs = np.array([c["embedding"] for c in all_chunks], dtype=np.float32)
+                np.save(str(emb_path), embs)
+            manifest_path.write_text(json.dumps(new_manifest, indent=2))
 
         for i, f in enumerate(files):
             if progress_cb:
                 progress_cb(i + 1, len(files))
-            mtime = str(f.stat().st_mtime)
-            key = str(f)
-            text = await asyncio.to_thread(f.read_text, errors="ignore")
-            header = ""
-            chunks = chunk_text(text)
-            chunk_hashes = [hashlib.md5(c.encode()).hexdigest() for c in chunks]
+            try:
+                mtime = str(f.stat().st_mtime)
+                key = str(f)
 
-            if key in existing and existing[key]["mtime"] == mtime:
-                embeddings = [cached_emb_by_hash.get(h, None) for h in chunk_hashes]
-                if None in embeddings:
-                    embeddings = await self._embed(chunks)
-            else:
+                # Fast path: unchanged file with fully-cached embeddings —
+                # rebuild from the manifest without reading or re-chunking it.
+                if key in existing and existing[key]["mtime"] == mtime:
+                    entry = existing[key]
+                    cached = [cached_emb_by_hash.get(c.get("hash", "")) for c in entry["chunks"]]
+                    if entry["chunks"] and None not in cached:
+                        for c, e in zip(entry["chunks"], cached):
+                            all_chunks.append({**c, "embedding": e})
+                        new_manifest.append(entry)
+                        continue
+
+                text = await asyncio.to_thread(f.read_text, errors="ignore")
+                header = ""
+                chunks = [c for c in chunk_text(text) if c.strip()]
+                if not chunks:
+                    continue
+                chunk_hashes = [hashlib.md5(c.encode()).hexdigest() for c in chunks]
                 embeddings = await self._embed(chunks)
+            except Exception as exc:
+                # One bad file (or a transient Ollama error that survived retries)
+                # must not kill the whole index run — skip it; absent from the
+                # manifest, it will be retried on the next index.
+                failed += 1
+                logger.warning("KB index: skipped %s (%s)", f.name, exc)
+                continue
 
             file_chunks = []
             for chunk, emb, h in zip(chunks, embeddings, chunk_hashes):
@@ -122,14 +155,19 @@ class KnowledgeBase:
                 file_chunks.append({"text": chunk, "file": f.name, "header": header, "hash": h})
             new_manifest.append({"file": key, "mtime": mtime, "chunks": file_chunks})
 
+            # Persist progress every 10 files so an interrupted first index
+            # resumes from the cache instead of starting over.
+            if (i + 1) % 10 == 0:
+                await asyncio.to_thread(_save_cache)
+
         self._chunks = all_chunks
         if all_chunks:
-            embs = [c["embedding"] for c in all_chunks]
-            self._embeddings = np.array(embs, dtype=np.float32)
-            await asyncio.to_thread(np.save, str(emb_path), self._embeddings)
-        await asyncio.to_thread(
-            manifest_path.write_text, json.dumps(new_manifest, indent=2)
-        )
+            self._embeddings = np.array(
+                [c["embedding"] for c in all_chunks], dtype=np.float32
+            )
+        await asyncio.to_thread(_save_cache)
+        logger.info("KB index complete: %d files, %d chunks, %d skipped",
+                    len(new_manifest), len(all_chunks), failed)
 
     async def search(self, query: str, top_k: int = 5) -> list[KBResult]:
         if self._embeddings is None or len(self._chunks) == 0:

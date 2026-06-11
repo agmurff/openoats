@@ -41,6 +41,7 @@ class AppCoordinator(QObject):
         self._engine_task: asyncio.Task | None = None
         self._last_session_id: str | None = None
         self._last_title: str = "Meeting"
+        self._meeting_context = None  # MeetingContext from Outlook, if matched
 
         self.kb = self._build_kb()
         self.suggestion_engine: SuggestionEngine | None = None
@@ -170,6 +171,20 @@ class AppCoordinator(QObject):
         )
         logger.info("start_session: session store opened (id=%s)", self._session_store.session_id)
 
+        # Match this session to an Outlook calendar event (subject, attendees, agenda)
+        self._meeting_context = None
+        if self.settings.calendar_enabled:
+            try:
+                from integrations.outlook_calendar import find_meeting
+                self._meeting_context = await asyncio.to_thread(find_meeting)
+            except Exception as exc:
+                logger.info("calendar lookup failed: %s", exc)
+            if self._meeting_context:
+                logger.info("start_session: calendar match %r", self._meeting_context.subject)
+                self.toast_requested.emit(
+                    f"Linked to calendar: {self._meeting_context.subject}", "info"
+                )
+
         self.toast_requested.emit("Loading transcription model…", "info")
         logger.info("start_session: loading TranscriptionEngine (this can download the model)")
         self._engine = await asyncio.to_thread(
@@ -200,16 +215,23 @@ class AppCoordinator(QObject):
         self._engine.on_partial = self.transcript_store.update_partial
 
         llm_fn = self._get_llm_fn()
+        meeting_block = self._meeting_context.prompt_block() if self._meeting_context else ""
         if self.kb and llm_fn:
             self.suggestion_engine = SuggestionEngine(
                 kb=self.kb,
                 llm_complete=llm_fn,
                 on_suggestion=self._on_suggestion,
+                meeting_context=meeting_block,
             )
         from intelligence.templates import get_prompt
+        notes_prompt = get_prompt(self.settings.notes_template)
+        if meeting_block:
+            # Knowing who's in the room lets the model attribute action items
+            # to real names instead of "You"/"Them".
+            notes_prompt += f"\n\nContext for this meeting:\n{meeting_block}"
         self.notes_engine = NotesEngine(
             llm_complete=llm_fn,
-            system_prompt=get_prompt(self.settings.notes_template),
+            system_prompt=notes_prompt,
         )
 
         logger.info("start_session: launching transcription task")
@@ -261,16 +283,26 @@ class AppCoordinator(QObject):
         if not session_id:
             return
 
-        # Ask the LLM for a meeting-specific title; fall back to the topic/state title.
+        # Title priority: calendar subject (the canonical meeting name) >
+        # LLM-generated from notes > conversation-state topic.
         title_root = self._last_title
-        llm_fn = self._get_llm_fn()
-        if llm_fn:
-            from intelligence.notes_engine import generate_title
-            generated = await generate_title(llm_fn, notes_text)
-            if generated:
-                title_root = generated
+        if self._meeting_context and self._meeting_context.subject:
+            title_root = self._meeting_context.subject
+        else:
+            llm_fn = self._get_llm_fn()
+            if llm_fn:
+                from intelligence.notes_engine import generate_title
+                generated = await generate_title(llm_fn, notes_text)
+                if generated:
+                    title_root = generated
         date_str = datetime.now().strftime("%Y-%m-%d")
         page_title = f"{title_root} ({date_str})"
+
+        # Prepend organizer/attendees so notes & Notion show who was in the room.
+        if self._meeting_context:
+            header = self._meeting_context.notes_header()
+            if header:
+                notes_text = f"{header}\n\n{notes_text}"
 
         notes_path = self.settings.notes_dir / f"{session_id}.md"
         try:

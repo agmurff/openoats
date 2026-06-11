@@ -30,6 +30,8 @@ DEFAULTS = {
     # MemPalace + post-session ingest (Phase 3)
     "mempalace_enabled": False,
     "mempalace_exe": "mempalace",
+    # Outlook (classic, COM) calendar matching for meeting context
+    "calendar_enabled": True,
     # GitHub-based update check on launch
     "check_for_updates": True,
     "github_owner": "agmurff",

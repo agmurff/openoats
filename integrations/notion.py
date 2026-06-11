@@ -16,10 +16,20 @@ MAX_BLOCKS_PER_REQUEST = 100
 
 
 def _rich_text(content: str) -> list[dict]:
-    """Split content into <=2000-char rich_text spans (Notion's per-span limit)."""
-    spans = []
-    for i in range(0, len(content), MAX_TEXT):
-        spans.append({"type": "text", "text": {"content": content[i:i + MAX_TEXT]}})
+    """Markdown inline bold (**text**) -> bold spans; chunk to Notion's
+    2000-char per-span limit."""
+    import re
+    spans: list[dict] = []
+    for part in re.split(r"(\*\*[^*]+\*\*)", content):
+        if not part:
+            continue
+        bold = part.startswith("**") and part.endswith("**") and len(part) > 4
+        text = part[2:-2] if bold else part
+        for i in range(0, len(text), MAX_TEXT):
+            span: dict = {"type": "text", "text": {"content": text[i:i + MAX_TEXT]}}
+            if bold:
+                span["annotations"] = {"bold": True}
+            spans.append(span)
     return spans or [{"type": "text", "text": {"content": ""}}]
 
 

@@ -141,6 +141,15 @@ class SettingsDialog(QDialog):
         self._notion_page.setPlaceholderText("32-char page id from the page URL")
         integ_layout.addWidget(self._notion_page)
 
+        cal_sep = QLabel("Outlook Calendar")
+        cal_sep.setStyleSheet("color: #8b7e72; font-size: 11px; margin-top: 10px;")
+        integ_layout.addWidget(cal_sep)
+        self._calendar_enabled = QCheckBox(
+            "Match meetings to Outlook calendar (title, attendees, agenda context)"
+        )
+        self._calendar_enabled.setChecked(self.settings.calendar_enabled)
+        integ_layout.addWidget(self._calendar_enabled)
+
         sep = QLabel("MemPalace")
         sep.setStyleSheet("color: #8b7e72; font-size: 11px; margin-top: 10px;")
         integ_layout.addWidget(sep)
@@ -192,6 +201,7 @@ class SettingsDialog(QDialog):
         self.settings.input_device = self._input_device_indices[self._input_device.currentIndex()]
         self.settings.kb_folder = self._kb_folder.text() or None
         self.settings.hide_from_screen_capture = self._hide_screen.isChecked()
+        self.settings.calendar_enabled = self._calendar_enabled.isChecked()
         self.settings.notion_enabled = self._notion_enabled.isChecked()
         self.settings.notion_page_id = self._notion_page.text().strip()
         self.settings.mempalace_enabled = self._mempalace_enabled.isChecked()

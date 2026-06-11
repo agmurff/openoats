@@ -92,13 +92,15 @@ def render_transcript_md(title: str, utterances: list[Utterance]) -> str:
     return "\n".join(lines)
 
 
-async def summarize(utterances: list[Utterance], template_name: str) -> str:
+async def summarize(utterances: list[Utterance], template_name: str,
+                    extra_context: str = "") -> str:
     settings = AppSettings()
     client = OllamaClient(
         settings.ollama_base_url, settings.ollama_llm_model, settings.ollama_embedding_model,
     )
     engine = NotesEngine(
-        llm_complete=client.complete, system_prompt=get_prompt(template_name),
+        llm_complete=client.complete,
+        system_prompt=get_prompt(template_name) + extra_context,
     )
     log.info("summarizing with %s (template=%s) ...", settings.ollama_llm_model, template_name)
     return await engine.generate(utterances)
@@ -166,24 +168,52 @@ async def main() -> int:
 
     settings = AppSettings()
 
+    # Match the recording to an Outlook calendar event via its filename
+    # timestamp (e.g. '2026-06-09 12-13-14.mp3' from the recorder).
+    meeting_ctx = None
+    import re as _re
+    m = _re.match(r"(\d{4}-\d{2}-\d{2}) (\d{2})-(\d{2})-(\d{2})", args.audio.stem)
+    rec_time = (datetime.strptime(f"{m.group(1)} {m.group(2)}:{m.group(3)}", "%Y-%m-%d %H:%M")
+                if m else None)
+    if settings.calendar_enabled:
+        try:
+            from integrations.outlook_calendar import find_meeting
+            meeting_ctx = await asyncio.to_thread(find_meeting, rec_time)
+        except Exception as exc:
+            log.info("calendar lookup failed: %s", exc)
+        if meeting_ctx:
+            log.info("calendar match: %s", meeting_ctx.subject)
+
     utterances = transcribe(args.audio, settings.model_dir, settings.transcription_model)
     if not utterances:
         log.error("no transcribable speech found")
         return 2
 
-    notes_text = await summarize(utterances, args.template or settings.notes_template)
+    template_prompt_extra = f"\n\nContext for this meeting:\n{meeting_ctx.prompt_block()}" if meeting_ctx else ""
+    notes_text = await summarize(utterances, args.template or settings.notes_template,
+                                 extra_context=template_prompt_extra)
 
-    # Meeting-specific title from the LLM; --title / filename as fallback.
+    # Title priority: calendar subject > LLM-generated > --title/filename.
     title_root = args.title or args.audio.stem
-    from intelligence.notes_engine import generate_title
     client = OllamaClient(
         settings.ollama_base_url, settings.ollama_llm_model, settings.ollama_embedding_model,
     )
-    generated = await generate_title(client.complete, notes_text)
-    if generated:
-        title_root = generated
-        log.info("generated title: %s", generated)
-    title = f"{title_root} ({datetime.now().strftime('%Y-%m-%d')})"
+    if meeting_ctx and meeting_ctx.subject:
+        title_root = meeting_ctx.subject
+    else:
+        from intelligence.notes_engine import generate_title
+        generated = await generate_title(client.complete, notes_text)
+        if generated:
+            title_root = generated
+            log.info("generated title: %s", generated)
+    # Date the page by when the meeting happened, not when it was processed.
+    title_date = rec_time or (meeting_ctx.start if meeting_ctx else None) or datetime.now()
+    title = f"{title_root} ({title_date:%Y-%m-%d})"
+
+    if meeting_ctx:
+        header = meeting_ctx.notes_header()
+        if header:
+            notes_text = f"{header}\n\n{notes_text}"
 
     # Notes .md goes in the KB-indexed notes folder; transcript goes in
     # sessions (kept out of the KB and out of Notion — recall noise).

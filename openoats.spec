@@ -11,7 +11,13 @@ hiddenimports = [
     "silero_vad",
     # Our integrations (lazy-imported from coordinator, so list explicitly)
     "integrations.notion",
+    "integrations.outlook_calendar",
     "httpx",
+    # Outlook COM (lazy-imported inside find_meeting)
+    "win32com",
+    "win32com.client",
+    "pythoncom",
+    "win32timezone",
 ]
 
 for pkg in ["ctranslate2", "faster_whisper", "silero_vad"]:
