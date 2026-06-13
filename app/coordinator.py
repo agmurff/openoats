@@ -304,16 +304,32 @@ class AppCoordinator(QObject):
             if header:
                 notes_text = f"{header}\n\n{notes_text}"
 
+        notes_md = f"# {page_title}\n\n{notes_text}\n"
         notes_path = self.settings.notes_dir / f"{session_id}.md"
         try:
-            await asyncio.to_thread(
-                notes_path.write_text,
-                f"# {page_title}\n\n{notes_text}\n",
-                "utf-8",
-            )
+            await asyncio.to_thread(notes_path.write_text, notes_md, "utf-8")
             logger.info("Notes written: %s", notes_path)
         except OSError as exc:
             logger.warning("Could not write notes file: %s", exc)
+
+        # Also file the report into the knowledge base so future meetings can
+        # recall this one. (When kb_folder is unset the KB *is* notes_dir and
+        # the copy above already covers it.)
+        if self.settings.kb_folder:
+            try:
+                kb_dir = Path(self.settings.kb_folder) / "Meeting Notes"
+                await asyncio.to_thread(lambda: kb_dir.mkdir(parents=True, exist_ok=True))
+                import re as _re
+                safe_name = _re.sub(r'[<>:"/\\|?*]', "", page_title).strip()[:120] or session_id
+                kb_path = kb_dir / f"{safe_name}.md"
+                await asyncio.to_thread(kb_path.write_text, notes_md, "utf-8")
+                logger.info("Notes filed into KB: %s", kb_path)
+                if self.kb:
+                    # Incremental: cached files rebuild from the manifest in ~1s,
+                    # only the new report gets embedded — searchable immediately.
+                    asyncio.ensure_future(self.kb.index())
+            except OSError as exc:
+                logger.warning("Could not write notes into KB folder: %s", exc)
 
         if self.settings.notion_enabled:
             try:

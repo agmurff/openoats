@@ -218,10 +218,20 @@ async def main() -> int:
     # Notes .md goes in the KB-indexed notes folder; transcript goes in
     # sessions (kept out of the KB and out of Notion — recall noise).
     session_id = str(uuid4())
+    notes_md = render_notes_md(title, notes_text)
     notes_path = settings.notes_dir / f"{session_id}.md"
     notes_path.parent.mkdir(parents=True, exist_ok=True)
-    notes_path.write_text(render_notes_md(title, notes_text), encoding="utf-8")
+    notes_path.write_text(notes_md, encoding="utf-8")
     log.info("notes written: %s", notes_path)
+
+    # File the report into the knowledge base so future meetings can recall it.
+    if settings.kb_folder:
+        kb_dir = Path(settings.kb_folder) / "Meeting Notes"
+        kb_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = _re.sub(r'[<>:"/\\|?*]', "", title).strip()[:120] or session_id
+        kb_path = kb_dir / f"{safe_name}.md"
+        kb_path.write_text(notes_md, encoding="utf-8")
+        log.info("notes filed into KB: %s", kb_path)
 
     transcript_path = settings.session_dir / f"{session_id}.transcript.md"
     transcript_path.write_text(render_transcript_md(title, utterances), encoding="utf-8")
