@@ -107,7 +107,30 @@ def main():
     from ui.system_tray import SystemTray
     window._tray = SystemTray(main_window=window, coordinator=coordinator)
 
+    async def _recover_orphans():
+        # A crash during post-meeting summarization leaves a saved transcript
+        # with no notes. Regenerate them now so no meeting is lost.
+        from app.recovery import find_orphans, recover_one
+        orphans = find_orphans(settings)
+        if not orphans:
+            return
+        window._kb_label.setText(f"Recovering {len(orphans)} meeting(s)…")
+        recovered = 0
+        for sid in orphans:
+            try:
+                title = await recover_one(settings, sid)
+                if title:
+                    recovered += 1
+                    window._toast.show_message(f"Recovered notes: {title}", "success")
+                    if coordinator.kb:
+                        await coordinator.kb.index()
+            except Exception as exc:
+                logging.getLogger("openoats").warning("recover %s failed: %s", sid, exc)
+        if recovered:
+            window._kb_label.setText(f"Recovered {recovered} meeting(s)")
+
     async def _startup():
+        await _recover_orphans()
         if coordinator.kb:
             window._kb_label.setText("Indexing KB...")
             await coordinator.kb.index(

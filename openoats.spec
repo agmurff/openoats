@@ -12,6 +12,7 @@ hiddenimports = [
     # Our integrations (lazy-imported from coordinator, so list explicitly)
     "integrations.notion",
     "integrations.outlook_calendar",
+    "app.recovery",
     "httpx",
     # Outlook COM (lazy-imported inside find_meeting)
     "win32com",
