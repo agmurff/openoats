@@ -76,31 +76,8 @@ class AppCoordinator(QObject):
         return None
 
     def _get_llm_fn(self):
-        provider = self.settings.llm_provider
-        if provider == "openrouter":
-            key = self.settings.get_secret("openrouter_api_key") or ""
-            if not key:
-                return None
-            from intelligence.clients.openrouter import OpenRouterClient
-            client = OpenRouterClient(api_key=key, model=self.settings.llm_model)
-            return client.complete
-        elif provider == "ollama":
-            from intelligence.clients.ollama import OllamaClient
-            client = OllamaClient(
-                self.settings.ollama_base_url,
-                self.settings.ollama_llm_model,
-                self.settings.ollama_embedding_model,
-            )
-            return client.complete
-        elif provider == "custom":
-            from intelligence.clients.openrouter import OpenRouterClient
-            client = OpenRouterClient(
-                api_key="",
-                base_url=self.settings.custom_base_url,
-                model=self.settings.custom_llm_model,
-            )
-            return client.complete
-        return None
+        from intelligence.llm_factory import make_llm_complete
+        return make_llm_complete(self.settings)
 
     def _migrate_legacy_env(self) -> None:
         """One-time import of Notion credentials from the old project's .env
@@ -266,8 +243,29 @@ class AppCoordinator(QObject):
         utterances = list(self.transcript_store.utterances)
         if not utterances:
             return
+
+        # Optional: Claude repairs the raw ASR transcript before notes, and we
+        # save the cleaned version alongside the session for a readable record.
+        cleaned = None
+        if self.settings.clean_transcript:
+            try:
+                from intelligence.transcript_cleanup import clean_transcript
+                ctx = self._meeting_context.prompt_block() if self._meeting_context else ""
+                self.toast_requested.emit("Cleaning transcript with Claude…", "info")
+                cleaned = await clean_transcript(self._get_llm_fn(), utterances, context=ctx)
+                if cleaned and self._last_session_id:
+                    tpath = self.settings.session_dir / f"{self._last_session_id}.transcript.md"
+                    await asyncio.to_thread(tpath.write_text, cleaned, "utf-8")
+            except Exception as exc:
+                logger.warning("Transcript cleanup failed: %s", exc)
+                cleaned = None
+
+        self.toast_requested.emit("Writing notes with Claude…", "info")
         try:
-            chunk = await self.notes_engine.generate(utterances)
+            if cleaned:
+                chunk = await self.notes_engine.generate_text(cleaned)
+            else:
+                chunk = await self.notes_engine.generate(utterances)
         except Exception as exc:
             logger.warning("Notes generation failed: %s", exc)
             return

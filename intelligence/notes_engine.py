@@ -26,6 +26,14 @@ class NotesEngine:
         self.on_chunk: Callable[[str], None] = lambda c: None
         self._task: asyncio.Task | None = None
 
+    async def generate_text(self, transcript: str) -> str:
+        """Generate notes from an already-formatted (e.g. cleaned) transcript string."""
+        messages = [
+            {"role": "system", "content": self._system_prompt},
+            {"role": "user", "content": transcript},
+        ]
+        return await self._llm(messages)
+
     async def generate(self, utterances: list[Utterance]) -> str:
         if self.is_generating:
             return ""

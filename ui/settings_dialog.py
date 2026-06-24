@@ -24,9 +24,17 @@ class SettingsDialog(QDialog):
         llm_layout = QVBoxLayout(llm_tab)
         llm_layout.addWidget(QLabel("LLM Provider"))
         self._llm_provider = QComboBox()
-        self._llm_provider.addItems(["openrouter", "ollama", "custom"])
+        self._llm_provider.addItems(["claude_cli", "openrouter", "ollama", "custom"])
         self._llm_provider.setCurrentText(self.settings.llm_provider)
         llm_layout.addWidget(self._llm_provider)
+        self._clean_transcript = QCheckBox("Clean up the transcript with the LLM before writing notes")
+        self._clean_transcript.setChecked(self.settings.clean_transcript)
+        llm_layout.addWidget(self._clean_transcript)
+        claude_note = QLabel("claude_cli uses your Claude Code login (no API key). "
+                             "Sends transcript text to Anthropic.")
+        claude_note.setStyleSheet("color: #8b7e72; font-size: 11px;")
+        claude_note.setWordWrap(True)
+        llm_layout.addWidget(claude_note)
         llm_layout.addWidget(QLabel("Model"))
         self._llm_model = QLineEdit(self.settings.llm_model)
         llm_layout.addWidget(self._llm_model)
@@ -192,6 +200,7 @@ class SettingsDialog(QDialog):
 
     def _save(self):
         self.settings.llm_provider = self._llm_provider.currentText()
+        self.settings.clean_transcript = self._clean_transcript.isChecked()
         self.settings.llm_model = self._llm_model.text()
         self.settings.ollama_base_url = self._ollama_url.text()
         self.settings.notes_template = self._notes_template.currentText()

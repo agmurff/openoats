@@ -6,11 +6,15 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DEFAULTS = {
-    # Local-first defaults: everything runs on-device (Ollama LLM + embeddings,
-    # faster-whisper transcription) so no meeting data leaves the machine.
-    "llm_provider": "ollama",
+    # LLM = Claude Code CLI by default (best notes/cleanup; reuses Claude login).
+    # Transcription stays local (Whisper); embeddings stay local (Ollama) since
+    # Claude can't embed.
+    "llm_provider": "claude_cli",
+    "claude_bin": "",          # blank = auto-resolve `claude` on PATH / ~/.local/bin
+    "claude_model": "",        # blank = whatever Claude Code is configured to use
+    "clean_transcript": True,  # Claude repairs the raw ASR transcript before notes
     "llm_model": "openai/gpt-4o-mini",
-    "transcription_model": "base.en",  # ~142 MB, CPU-friendly
+    "transcription_model": "small.en",  # ~244 MB; better accuracy than base, still CPU-light
     "embedding_provider": "ollama",
     "embedding_model": "voyage-3-lite",
     "ollama_base_url": "http://localhost:11434",

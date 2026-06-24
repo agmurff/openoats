@@ -13,6 +13,9 @@ hiddenimports = [
     "integrations.notion",
     "integrations.outlook_calendar",
     "app.recovery",
+    "intelligence.llm_factory",
+    "intelligence.clients.claude_cli",
+    "intelligence.transcript_cleanup",
     "httpx",
     # Outlook COM (lazy-imported inside find_meeting)
     "win32com",

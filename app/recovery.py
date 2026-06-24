@@ -88,8 +88,8 @@ async def recover_one(settings: AppSettings, sid: str) -> str | None:
         return None
     logger.info("recover: %s — %d utterances", sid, len(utterances))
 
-    client = OllamaClient(settings.ollama_base_url, settings.ollama_llm_model,
-                          settings.ollama_embedding_model)
+    from intelligence.llm_factory import make_llm_complete
+    llm = make_llm_complete(settings)
 
     # Calendar context from when the meeting actually happened.
     meeting_ctx = None
@@ -103,17 +103,23 @@ async def recover_one(settings: AppSettings, sid: str) -> str | None:
         except Exception as exc:
             logger.info("recover: calendar lookup failed: %s", exc)
 
-    extra = f"\n\nContext for this meeting:\n{meeting_ctx.prompt_block()}" if meeting_ctx else ""
-    engine = NotesEngine(llm_complete=client.complete,
+    ctx = meeting_ctx.prompt_block() if meeting_ctx else ""
+    extra = f"\n\nContext for this meeting:\n{ctx}" if ctx else ""
+    engine = NotesEngine(llm_complete=llm,
                          system_prompt=get_prompt(settings.notes_template) + extra)
-    notes_text = await engine.generate(utterances)
+    if settings.clean_transcript:
+        from intelligence.transcript_cleanup import clean_transcript
+        cleaned = await clean_transcript(llm, utterances, context=ctx)
+        notes_text = await engine.generate_text(cleaned)
+    else:
+        notes_text = await engine.generate(utterances)
     if not notes_text:
         return None
 
     if meeting_ctx and meeting_ctx.subject:
         title_root = meeting_ctx.subject
     else:
-        title_root = (await generate_title(client.complete, notes_text)) or "Recovered Meeting"
+        title_root = (await generate_title(llm, notes_text)) or "Recovered Meeting"
     title = f"{title_root} ({started.astimezone():%Y-%m-%d})"
 
     if meeting_ctx and meeting_ctx.notes_header():

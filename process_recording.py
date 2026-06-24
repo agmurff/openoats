@@ -95,14 +95,17 @@ def render_transcript_md(title: str, utterances: list[Utterance]) -> str:
 async def summarize(utterances: list[Utterance], template_name: str,
                     extra_context: str = "") -> str:
     settings = AppSettings()
-    client = OllamaClient(
-        settings.ollama_base_url, settings.ollama_llm_model, settings.ollama_embedding_model,
-    )
-    engine = NotesEngine(
-        llm_complete=client.complete,
-        system_prompt=get_prompt(template_name) + extra_context,
-    )
-    log.info("summarizing with %s (template=%s) ...", settings.ollama_llm_model, template_name)
+    from intelligence.llm_factory import make_llm_complete
+    llm = make_llm_complete(settings)
+    engine = NotesEngine(llm_complete=llm, system_prompt=get_prompt(template_name) + extra_context)
+    log.info("summarizing with provider=%s (template=%s) ...", settings.llm_provider, template_name)
+    # Claude repairs the raw ASR transcript first when enabled.
+    if settings.clean_transcript:
+        from intelligence.transcript_cleanup import clean_transcript
+        ctx = extra_context.replace("\n\nContext for this meeting:\n", "")
+        log.info("cleaning transcript (%d utterances) ...", len(utterances))
+        cleaned = await clean_transcript(llm, utterances, context=ctx)
+        return await engine.generate_text(cleaned)
     return await engine.generate(utterances)
 
 
@@ -195,14 +198,13 @@ async def main() -> int:
 
     # Title priority: calendar subject > LLM-generated > --title/filename.
     title_root = args.title or args.audio.stem
-    client = OllamaClient(
-        settings.ollama_base_url, settings.ollama_llm_model, settings.ollama_embedding_model,
-    )
+    from intelligence.llm_factory import make_llm_complete
+    llm = make_llm_complete(settings)
     if meeting_ctx and meeting_ctx.subject:
         title_root = meeting_ctx.subject
     else:
         from intelligence.notes_engine import generate_title
-        generated = await generate_title(client.complete, notes_text)
+        generated = await generate_title(llm, notes_text)
         if generated:
             title_root = generated
             log.info("generated title: %s", generated)
