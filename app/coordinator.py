@@ -77,7 +77,10 @@ class AppCoordinator(QObject):
 
     def _get_llm_fn(self):
         from intelligence.llm_factory import make_llm_complete
-        return make_llm_complete(self.settings)
+        return make_llm_complete(
+            self.settings,
+            on_fallback=lambda reason: self.toast_requested.emit(reason, "warning"),
+        )
 
     def _migrate_legacy_env(self) -> None:
         """One-time import of Notion credentials from the old project's .env
