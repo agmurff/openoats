@@ -1,69 +1,78 @@
 _STYLE = (
-    "Be ruthless about brevity. Bullets only, no preamble, no closing remarks, "
-    "no restating the transcript. Max 8 words of context per bullet beyond the fact itself. "
-    "Skip any section with nothing to report (omit the heading entirely). "
-    "Never invent owners, dates, or decisions that weren't said."
+    "\nRULES:\n"
+    "- Output ONLY the sections below, as markdown. No preamble, no closing remarks.\n"
+    "- Bullets must be real content from the meeting — never output placeholder or "
+    "instructional text (e.g. never write '(due date if stated)', 'Owner: task', or 'Unattributed').\n"
+    "- Action items: start with the owner's name and a concrete verb. If no owner was named, "
+    "start with the task itself. Add a due date only if one was actually stated. If there are "
+    "no real action items, omit the whole section.\n"
+    "- Omit any section that has no genuine content — do not emit an empty heading.\n"
+    "- Be specific: keep names, numbers, dates, systems, and decisions exactly as said. "
+    "Never invent anything not in the transcript.\n"
+    "- Keep each bullet to one tight line."
+)
+
+_GENERIC_EXAMPLE = (
+    "\nEXAMPLE of the intended style (do not reuse its content):\n"
+    "## Decisions\n"
+    "- Milesight device approved for trial only, not production\n"
+    "## Action Items\n"
+    "- Adam: send final quote once the customer confirms\n"
+    "- Richard: follow up on the delayed gateway shipment\n"
+    "## Key Points\n"
+    "- Two sites in scope: 1546 and 56 Cust Road, Oxford\n"
+    "- Production devices must last 10 years\n"
 )
 
 TEMPLATES: list[tuple[str, str]] = [
     (
         "Generic",
         (
-            "Produce tight meeting notes in this exact structure:\n"
-            "## Decisions\n- (each decision, one line)\n"
-            "## Action Items\n- Owner: task (due date if stated)\n"
-            "## Key Points\n- (max 5 bullets, only things someone would need to recall later)\n"
-            f"\n{_STYLE}"
+            "You are an expert meeting-notes writer. From the transcript, produce notes with "
+            "these sections (in this order), each only if it has real content:\n"
+            "## Decisions\n## Action Items\n## Key Points"
+            f"{_STYLE}{_GENERIC_EXAMPLE}"
         ),
     ),
     (
         "1:1",
         (
-            "Produce tight 1:1 notes:\n"
-            "## Feedback\n- (given and received, one line each)\n"
-            "## Action Items\n- Owner: task\n"
-            "## Follow-ups\n- (only if explicitly agreed)\n"
-            f"\n{_STYLE}"
+            "You are writing notes for a 1:1 meeting. Sections (include only those with real content):\n"
+            "## Feedback\n## Action Items\n## Follow-ups"
+            f"{_STYLE}"
         ),
     ),
     (
         "Customer Discovery",
         (
-            "Produce tight discovery-call notes:\n"
-            "## Pain Points\n- (one line each)\n"
-            "## Product Signals\n- (feature asks, willingness to pay, objections)\n"
-            "## Quotes\n- (max 2, verbatim, only if genuinely revealing)\n"
-            "## Next Steps\n- Owner: task\n"
-            f"\n{_STYLE}"
+            "You are writing notes for a customer discovery call. Sections (only those with content):\n"
+            "## Pain Points\n## Product Signals\n## Notable Quotes\n## Next Steps"
+            f"{_STYLE}"
         ),
     ),
     (
         "Hiring Interview",
         (
-            "Produce tight interview notes:\n"
-            "## Strengths\n- (one line each)\n"
-            "## Concerns\n- (one line each)\n"
-            "## Recommendation\n- Hire / no-hire / lean, with one-line rationale\n"
-            f"\n{_STYLE}"
+            "You are writing notes for a hiring interview. Sections (only those with content):\n"
+            "## Strengths\n## Concerns\n## Recommendation"
+            f"{_STYLE}"
         ),
     ),
     (
         "Stand-Up",
         (
-            "Produce tight stand-up notes:\n"
-            "## By Person\n- Name: did X, next Y, blocked on Z (omit empty parts)\n"
-            "## Cross-team Actions\n- Owner: task\n"
-            f"\n{_STYLE}"
+            "You are writing stand-up notes. Under ## By Person, one bullet per person as "
+            "'Name: did X; next Y; blocked on Z' (drop any part not mentioned). Then ## Cross-team Actions "
+            "if any were raised."
+            f"{_STYLE}"
         ),
     ),
     (
         "Weekly Meeting",
         (
-            "Produce tight weekly-meeting notes:\n"
-            "## Decisions\n- (one line each)\n"
-            "## Action Items\n- Owner: task (due date if stated)\n"
-            "## Open Questions\n- (only if left unresolved)\n"
-            f"\n{_STYLE}"
+            "You are writing weekly team-meeting notes. Sections (only those with content):\n"
+            "## Decisions\n## Action Items\n## Open Questions"
+            f"{_STYLE}"
         ),
     ),
 ]

@@ -9,7 +9,15 @@ class OllamaClient(BaseLLMClient, BaseEmbeddingClient):
         self._emb = embedding_model
 
     async def complete(self, messages: list[dict], stream: bool = False) -> str:
-        payload = {"model": self._llm, "messages": messages, "stream": False}
+        payload = {
+            "model": self._llm,
+            "messages": messages,
+            "stream": False,
+            # CRITICAL: Ollama defaults to a 2048-token context, which silently
+            # truncates the transcript to the last ~1500 words — the model never
+            # sees most of the meeting. Give it room to read the whole thing.
+            "options": {"num_ctx": 16384},
+        }
         # 10 min — long-meeting notes on a small CPU Qwen can easily run past 60s.
         async with httpx.AsyncClient(timeout=600) as client:
             try:

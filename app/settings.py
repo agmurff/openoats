@@ -18,7 +18,7 @@ DEFAULTS = {
     "embedding_provider": "ollama",
     "embedding_model": "voyage-3-lite",
     "ollama_base_url": "http://localhost:11434",
-    "ollama_llm_model": "qwen2.5:3b",  # lightweight Qwen for CPU; change + `ollama pull` as desired
+    "ollama_llm_model": "qwen2.5:7b",  # local fallback when Claude is unavailable; `ollama pull` it
     "ollama_embedding_model": "nomic-embed-text",
     "custom_base_url": "http://localhost:1234/v1",
     "custom_llm_model": "local-model",
