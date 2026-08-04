@@ -34,6 +34,10 @@ DEFAULTS = {
     # MemPalace + post-session ingest (Phase 3)
     "mempalace_enabled": False,
     "mempalace_exe": "mempalace",
+    # Keep call apps (Teams/Zoom) smooth while recording: cap Whisper CPU
+    # threads (0 = auto: cores/4) and drop process priority during a session.
+    "whisper_cpu_threads": 0,
+    "low_priority_while_recording": True,
     # Outlook (classic, COM) calendar matching for meeting context
     "calendar_enabled": True,
     # GitHub-based update check on launch

@@ -13,6 +13,7 @@ hiddenimports = [
     "integrations.notion",
     "integrations.outlook_calendar",
     "app.recovery",
+    "app.process_priority",
     "intelligence.llm_factory",
     "intelligence.clients.claude_cli",
     "intelligence.transcript_cleanup",

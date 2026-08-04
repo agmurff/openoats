@@ -69,10 +69,13 @@ class StreamingTranscriber:
 
         self.on_partial("...")
 
+        # beam_size=1 (greedy): ~3-5x less CPU per segment than beam 5, which
+        # matters when a call app (Teams) needs real-time CPU alongside us.
+        # Claude's post-meeting cleanup recovers most of the small WER cost.
         segments, _ = self._model.transcribe(
             buf,
             language="en",
-            beam_size=5,
+            beam_size=1,
         )
         text = " ".join(s.text for s in segments).strip()
         if text:

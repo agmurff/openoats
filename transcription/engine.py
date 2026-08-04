@@ -10,7 +10,7 @@ from models.models import Utterance
 _PARAKEET_IDS = {"parakeet-tdt-0.6b-v2", "parakeet-tdt-1.1b"}
 
 
-def _load_model(model_dir: Path, model_id: str):
+def _load_model(model_dir: Path, model_id: str, cpu_threads: int = 0):
     if model_id in _PARAKEET_IDS:
         from transcription.parakeet_backend import ParakeetModel
         return ParakeetModel(model_id)
@@ -19,18 +19,26 @@ def _load_model(model_dir: Path, model_id: str):
     compute_type = "float16" if device == "cuda" else "int8"
     cache_path = model_dir / f"models--Systran--faster-whisper-{model_id}" / "refs" / "main"
     local_only = cache_path.exists()
+    if device == "cpu" and cpu_threads <= 0:
+        # Cap inference threads: uncapped ctranslate2 saturates every core on
+        # each segment flush, starving real-time apps (Teams voice drops).
+        import os
+        cpu_threads = max(2, (os.cpu_count() or 8) // 4)
     return WhisperModel(
         model_id,
         device=device,
         compute_type=compute_type,
         download_root=str(model_dir),
         local_files_only=local_only,
+        cpu_threads=cpu_threads if device == "cpu" else 0,
+        num_workers=1,
     )
 
 
 class TranscriptionEngine:
-    def __init__(self, model_dir: Path, model_size: str = "large-v3-turbo"):
-        self._model = _load_model(model_dir, model_size)
+    def __init__(self, model_dir: Path, model_size: str = "large-v3-turbo",
+                 cpu_threads: int = 0):
+        self._model = _load_model(model_dir, model_size, cpu_threads)
         vad_mic = SileroVAD()
         vad_them = SileroVAD()
         self._mic_transcriber = StreamingTranscriber("you", self._model, vad_mic)

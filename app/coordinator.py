@@ -165,12 +165,19 @@ class AppCoordinator(QObject):
                     f"Linked to calendar: {self._meeting_context.subject}", "info"
                 )
 
+        # Yield CPU to real-time call apps (Teams voice was dropping while our
+        # inference bursts ran at equal priority).
+        if self.settings.low_priority_while_recording:
+            from app.process_priority import lower_for_recording
+            lower_for_recording()
+
         self.toast_requested.emit("Loading transcription model…", "info")
         logger.info("start_session: loading TranscriptionEngine (this can download the model)")
         self._engine = await asyncio.to_thread(
             TranscriptionEngine,
             model_dir=self.settings.model_dir,
             model_size=self.settings.transcription_model,
+            cpu_threads=self.settings.whisper_cpu_threads,
         )
         logger.info("start_session: TranscriptionEngine loaded")
 
@@ -231,6 +238,10 @@ class AppCoordinator(QObject):
 
         self._mic.stop()
         self._sys.stop()
+
+        if self.settings.low_priority_while_recording:
+            from app.process_priority import restore_normal
+            restore_normal()
 
         if self._session_store:
             topic = self.transcript_store.conversation_state.topic or "Meeting"
